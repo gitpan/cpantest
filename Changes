@@ -1,5 +1,10 @@
 Revision history for Perl script cpantest.
 
-0.01  Mon Jul  6 20:39:03 1998
+0.9  Mon Jul  6 20:39:03 1998
 	- original version; created by smin 0.01
+
+0.91 Tue Jul  7 09:57:17 1998
+    - remove documentation for obsolete `-v' option
+    - die if unknown command line options are specified
+    - die if package name does not end with a dash and version number
 

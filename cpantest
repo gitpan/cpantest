@@ -12,7 +12,7 @@ for details.
 
 =head1 USAGE
 
-    cpantest -g grade [ -nc ] [ -auto ] [ -p package ] [ -v version ]
+    cpantest -g grade [ -nc ] [ -auto ] [ -p package ]
              [ email-addresses ]
 
 =head1 OPTIONS
@@ -34,11 +34,6 @@ tests, and is one of:
 =item -p package
 
 I<package> is the name of the package you are testing.  If you don't
-supply a value on the command line, you will be prompted for one.
-
-=item -v version
-
-I<version> is the version of the package you are testing.  If you don't
 supply a value on the command line, you will be prompted for one.
 
 =item -nc
@@ -79,7 +74,7 @@ use Getopt::Long;
 
 
 use vars qw($VERSION);
-$VERSION = "0.9";
+$VERSION = "0.91";
 
 use vars qw(%Grades $CC $CPAN_testers $Report);
 %Grades = (     # Legal grades:
@@ -89,23 +84,25 @@ use vars qw(%Grades $CC $CPAN_testers $Report);
     'unknown'   => "package did not include tests",
 );
 $CPAN_testers   = 'cpan-testers@perl.org';
-$Report         = $ENV{CPANTEST} || "$ENV{TMPDIR}CPANTEST.RPT";
+$Report         = $ENV{CPANTEST} ||
+                ($ENV{TMPDIR} ? "$ENV{TMPDIR}/CPANTEST.RPT" : "CPANTEST.RPT");
 
 
-# Process command line:
+### Process command line:
 use vars qw($Grade $Package $No_comment $Automatic);
 GetOptions(
     'g=s',  \$Grade,
     'p=s',  \$Package,
     'nc',   \$No_comment,
     'auto', \$Automatic,
-);
+) or usage();
+
 usage("-g <grade> is required")    unless defined $Grade;
 usage("grade `$Grade' is invalid") unless defined $Grades{$Grade};
 usage("-p is required with -auto") if $Automatic and !$Package;
+
 $CC = join ' ', @ARGV;
 $No_comment = 1 if $Automatic;
-
 
 my $comment_marker = $No_comment ? '' :
 q{--
@@ -113,7 +110,8 @@ q{--
 
 };
 
-# Compose report:
+
+### Compose report:
     open REPORT, ">$Report" or die "cannot open $Report:  $!";
         print REPORT <<"EOF";
 This distribution has been tested as part of the cpan-testers
@@ -147,6 +145,9 @@ if (!$Package) {
     $Package =~ s:.*/::;
     $Package = prompt('Package', $Package);
 }
+
+usage("`$Package' should end with a dash and version number only")
+    unless $Package =~ /-[\.0-9]+$/;
 
 $subject    = uc($Grade) . " $Package $Config{archname} $Config{osvers}";
 
@@ -233,7 +234,7 @@ sub usage
     print "Error:  $message\n" if defined $message;
     print "Usage:\n";
     print "  cpantest -g grade [ -nc ] [ -auto ] [ -p package ]\n";
-    print "           [ -v version ] [ email-addresses ]\n";
+    print "           [ email-addresses ]\n";
     print "  -g grade  Indicates the status of the tested package.\n";
     print "            Possible values for grade are:\n";
 
@@ -242,7 +243,6 @@ sub usage
     }
 
     print "  -p        Specify the name of the distribution tested.\n";
-    print "  -v        Specify the version of the distribution tested.\n";
     print "  -nc       No comment; you will not be prompted to comment on\n";
     print "            the package.\n";
     print "  -auto     Autosubmission (non-interactive); implies -nc.\n";
