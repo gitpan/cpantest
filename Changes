@@ -8,3 +8,12 @@ Revision history for Perl script cpantest.
     - die if unknown command line options are specified
     - die if package name does not end with a dash and version number
 
+0.92 ???
+    - Macintosh support
+    - various fixes
+
+0.92 Mon Sep 27 12:51:04 EDT 1999
+    - fix bug in $author regex (thanks to Peter Prymmer)
+    - convert cpantest to cpantest.PL
+    - fix `make install'
+
