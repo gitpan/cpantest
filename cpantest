@@ -1,0 +1,252 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+B<cpantest> - Report test results of a package retrieved from CPAN
+
+=head1 DESCRIPTION
+
+B<cpantest> uniformly posts package test results in support of the
+cpan-testers project.  See B<http://www.connect.net/gbarr/cpan-test/>
+for details.
+
+=head1 USAGE
+
+    cpantest -g grade [ -nc ] [ -auto ] [ -p package ] [ -v version ]
+             [ email-addresses ]
+
+=head1 OPTIONS
+
+=over 4
+
+=item -g grade
+
+I<grade> indicates the success or failure of the package's builtin
+tests, and is one of:
+
+    grade     meaning
+    -----     -------
+    pass      all tests included with the package passed
+    fail      some tests failed
+    na        the package does not work on this platform
+    unknown   the package did not include tests
+
+=item -p package
+
+I<package> is the name of the package you are testing.  If you don't
+supply a value on the command line, you will be prompted for one.
+
+=item -v version
+
+I<version> is the version of the package you are testing.  If you don't
+supply a value on the command line, you will be prompted for one.
+
+=item -nc
+
+No comment; you will not be prompted to supply a comment about the
+package.
+
+=item -auto
+
+Autosubmission (non-interactive); you won't be prompted to supply any
+information that you didn't provide on the command line.  Implies I<-nc>.
+
+=item email-addresses
+
+A list of additional email addresses that should be cc:'d in this
+report (typically, the package's author).
+
+=back
+
+=head1 AUTHOR
+
+Kurt Starsinic E<lt>F<kstar@isinet.com>E<gt>
+
+=head1 COPYRIGHT
+
+    Copyright (c) 1998 Kurt Starsinic.
+    This program is free software; you may redistribute it
+    and/or modify it under the same terms as Perl itself.
+
+=cut
+
+use strict;
+
+use Cwd;
+use Mail::Send;
+use Config;
+use Getopt::Long;
+
+
+use vars qw($VERSION);
+$VERSION = "0.9";
+
+use vars qw(%Grades $CC $CPAN_testers $Report);
+%Grades = (     # Legal grades:
+    'pass'      => "all tests pass",
+    'fail'      => "some tests fail",
+    'na'        => "package will not work on this platform",
+    'unknown'   => "package did not include tests",
+);
+$CPAN_testers   = 'cpan-testers@perl.org';
+$Report         = $ENV{CPANTEST} || "$ENV{TMPDIR}CPANTEST.RPT";
+
+
+# Process command line:
+use vars qw($Grade $Package $No_comment $Automatic);
+GetOptions(
+    'g=s',  \$Grade,
+    'p=s',  \$Package,
+    'nc',   \$No_comment,
+    'auto', \$Automatic,
+);
+usage("-g <grade> is required")    unless defined $Grade;
+usage("grade `$Grade' is invalid") unless defined $Grades{$Grade};
+usage("-p is required with -auto") if $Automatic and !$Package;
+$CC = join ' ', @ARGV;
+$No_comment = 1 if $Automatic;
+
+
+my $comment_marker = $No_comment ? '' :
+q{--
+[ insert comments here ]
+
+};
+
+# Compose report:
+    open REPORT, ">$Report" or die "cannot open $Report:  $!";
+        print REPORT <<"EOF";
+This distribution has been tested as part of the cpan-testers
+effort to test as many new uploads to CPAN as possible.  See
+http://www.connect.net/gbarr/cpan-test/
+
+$comment_marker
+-- 
+
+EOF
+    print REPORT Config::myconfig();
+    close REPORT;
+
+unless ($No_comment) {
+    my $editor  = $ENV{VISUAL} || $ENV{EDITOR} || $ENV{EDIT}
+                || ($^O eq 'VMS'     and "edit/tpu")
+                || ($^O eq 'MSWin32' and "notepad")
+                || 'vi';
+
+    $editor = prompt('Editor', $editor);
+
+    die "The editor `$editor' could not be run" if system "$editor $Report";
+    $CC ||= ask_cc();
+}
+
+
+my ($subject, $msg);
+
+if (!$Package) {
+    $Package =  cwd();
+    $Package =~ s:.*/::;
+    $Package = prompt('Package', $Package);
+}
+
+$subject    = uc($Grade) . " $Package $Config{archname} $Config{osvers}";
+
+if (!$Automatic) {
+    $subject    = prompt('Subject', $subject);
+
+    print "\n";
+    print "Subject:  $subject\n";
+    print "To:  $CPAN_testers\n";
+    print "Cc:  $CC\n" if defined $CC;
+
+    if (prompt('Send/Ignore', 'Ignore') !~ /^[Ss]/) {
+        print "Ignoring message.\n";
+        exit 1;
+    }
+}
+
+$msg = new Mail::Send Subject => $subject, To => $CPAN_testers;
+
+if (defined $CC) {
+    $CC =~ s/\s+/, /g;
+    $msg->cc($CC);
+}
+
+$msg->set('X-reported-via', "cpan-test version $VERSION");
+
+my $fh = $msg->open;
+    open REP, $Report;
+        while (<REP>) { print $fh $_ }
+    close REP;
+$fh->close;
+
+
+### End of main program; subroutines follow
+
+
+sub ask_cc
+{
+    my $cc = prompt('CC', 'none');
+
+    return ($cc eq 'none') ? undef : expand_author($cc);
+}
+
+
+# Given an author identifier (either a CPAN authorname or a proper
+# email address), return a proper email address.
+sub expand_author
+{
+    my ($author)    = @_;
+
+    if ($author =~ /^[-A-Z]+$/) {   # Smells like a CPAN authorname
+        eval { require CPAN } or return undef;
+
+        my $cpan_author = CPAN::Shell->expand("Author", $author);
+
+        return eval { $cpan_author->email };
+    }
+    elsif ($author =~ /^\S+@[a-zA-z0-9\.-]+$/) {
+        return $author;
+    }
+
+    return undef;
+}
+
+
+# Prompt for a new value for $label, given $default; return the user's
+# selection.
+sub prompt
+{
+    my ($label, $default)   = @_;
+
+    print "$label [$default]: ";
+    my $input = scalar <STDIN>;
+    chomp $input;
+
+    return (length $input) ? $input : $default;
+}
+
+
+sub usage
+{
+    my ($message)   = @_;
+
+    print "Error:  $message\n" if defined $message;
+    print "Usage:\n";
+    print "  cpantest -g grade [ -nc ] [ -auto ] [ -p package ]\n";
+    print "           [ -v version ] [ email-addresses ]\n";
+    print "  -g grade  Indicates the status of the tested package.\n";
+    print "            Possible values for grade are:\n";
+
+    foreach (keys %Grades) {
+        printf "              %-10s  %s\n", $_, $Grades{$_};
+    }
+
+    print "  -p        Specify the name of the distribution tested.\n";
+    print "  -v        Specify the version of the distribution tested.\n";
+    print "  -nc       No comment; you will not be prompted to comment on\n";
+    print "            the package.\n";
+    print "  -auto     Autosubmission (non-interactive); implies -nc.\n";
+
+    exit 1;
+}
+
